@@ -1,0 +1,16 @@
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/+esm";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
+const $=id=>document.getElementById(id);
+const configured=/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(SUPABASE_URL) && SUPABASE_ANON_KEY.startsWith("sb_publishable_");
+const supabase=configured?createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
+const labels={login:["Entre na sua conta","Utilize seu e-mail e senha para continuar.","Entrar na plataforma"],signup:["Crie sua conta","Cadastre-se para acessar a área restrita.","Criar conta"],reset:["Recupere sua senha","Receba por e-mail um link de recuperação.","Enviar link"]};
+let mode="login";
+function message(text="",kind=""){$("message").textContent=text;$("message").className=kind;}
+function setMode(next){mode=next;const [h,s,b]=labels[next];$("heading").textContent=h;$("subtitle").textContent=s;$("submit").textContent=b;$("password-group").hidden=next==="reset";$("password").required=next!=="reset";document.querySelectorAll("[data-mode]").forEach(x=>x.classList.toggle("active",x.dataset.mode===next));message();}
+function showUser(user){$("auth-screen").hidden=!!user;$("private-screen").hidden=!user;if(user){$("user-email").textContent=user.email??"";$("user-id").textContent="ID: "+user.id;}else{$("password").value="";}}
+document.querySelectorAll("[data-mode]").forEach(x=>x.addEventListener("click",()=>setMode(x.dataset.mode)));
+$("setup").hidden=configured;$("submit").disabled=!configured;
+if(supabase){supabase.auth.getUser().then(({data,error})=>showUser(error?null:data.user)).catch(()=>message("Falha ao verificar sessão.","error"));supabase.auth.onAuthStateChange((event,session)=>{showUser(session?.user||null);if(event==="PASSWORD_RECOVERY")showPasswordReset();});}
+async function showPasswordReset(){const password=prompt("Digite sua nova senha com pelo menos 6 caracteres:");if(password===null)return;if(password.length<6){message("A senha deve ter pelo menos 6 caracteres.","error");return;}const {error}=await supabase.auth.updateUser({password});message(error?error.message:"Senha alterada com sucesso!",error?"error":"success");}
+$("auth-form").addEventListener("submit",async e=>{e.preventDefault();if(!supabase)return;const email=$("email").value.trim(),password=$("password").value,button=$("submit");button.disabled=true;message("Processando...");try{let result;if(mode==="login")result=await supabase.auth.signInWithPassword({email,password});else if(mode==="signup")result=await supabase.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});else result=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(result.error)throw result.error;if(mode==="signup"&&!result.data.session)message("Confira seu e-mail para confirmar a conta.","success");else if(mode==="reset")message("Se o e-mail estiver cadastrado, você receberá instruções.","success");else message("Sucesso!","success");}catch(error){message(error.message||"Erro inesperado.","error");}finally{button.disabled=false;}});
+$("logout").addEventListener("click",async()=>{if(!supabase)return;const {error}=await supabase.auth.signOut();if(error)message(error.message,"error");else{showUser(null);setMode("login");message("Sessão encerrada.","success");}});
